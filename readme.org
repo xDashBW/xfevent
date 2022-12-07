@@ -1,0 +1,102 @@
+* 开发记录 用于记录与纠正与调整方向与无聊凑点字数
+
+- [X] 原理：单线程
+
+    - [X] 底层是 io 复用接口 / 唤醒接口 的 LOOP 
+
+    - [X] 网络事件
+
+        - [X] 用户注册读事件和写事件
+
+    - [X] 几个调度队列
+      
+      LOOP 就是调度队列的 Event 挪来挪去。
+
+      注册的进入注册队列，然后 epoll 返回后，如果 epoll io 复用读，写唤醒，则放入唤醒队列，统一处理。
+
+      （所以，reactor 也是线性处理的，而非并行处理，只是不会阻塞网络，如果要执行耗时任务，会阻塞其他 socket）
+
+      然后执行玩，根据一次性还是多次，重新放入调度队列
+
+        - [X] 注册队列
+
+        - [X] 唤醒队列
+
+    - [X] Buffer 缓存
+
+      给每个 socket 一个 buffer，当数据到达时，网络库复杂 read，防止上层应用阻塞，对于用户来说，使得’就绪态‘变成’完成态‘
+      
+- [-] 代码组织
+    - [-] 基础库
+
+        - [X] queue
+
+        - [ ] 定时轮
+
+        - [ ] 最小堆
+
+    - [X] 模块通信 flag
+        - [X] event_dispatch_queue: wait/actvite
+
+    - [-] 事件
+        - [-] 接口
+            - [X] event_init ()
+            - [X] event_add()
+            - [ ] event_del()
+                - [ ] FIXME
+                    - [ ] 如果事件处于激活队列中，可以直接删除吗？
+        - [X] 桥梁功能
+
+          用户注册 -> event -> epoll -> 反馈给用户，Event 如何充当这个桥梁的作用？
+
+            - [X]  唤醒时反馈给用户必要的信息 -> 回调函数接口设置
+
+              先不要考虑用户从 buffer 拿数据，就考虑唤醒用户
+
+            - [X] 用户注册  ：一个 socket 可以注册读，写两个 event 
+
+              假设你是用户，我要给某个 socket 注册唤醒读事件，或写事件。
+
+              那么需要设置 Event，并且设置属性
+
+                - [X] socket fd 
+                - [X] callback：(int fd, short ev, void *args);
+                - [X] short ，你想要监控的事件，通过 内置宏提供给你设置。
+
+                一个事件定好了，没有改变的必要吧
+
+    - [X] event_dispatch
+        - [X] 接口
+            - [X] event_dispatch_init
+            - [X] event_dispatch_queue_add
+            - [X] event_dispatch_queue_del
+            - [X] event_dispatch_loop()
+          
+        - [X] 队列（事件）管理和统一 dispatch （调度，分发）
+
+    - [-] io 复用后端 epoll / select / poll / kqueue 
+        - [ ] 接口
+            - [ ] epoll_new()
+                - [ ] Fixme
+                    - [ ] why _new rather than _init
+            - [ ] epoll_add()
+            - [ ] epoll_del()
+            - [ ] epoll_dispatch()
+              
+        - [X] 封装 epoll_ctl(EPOLL_CTL_ALL)
+
+          检测其余同一个 socket 的其他 event 是否存在，以设置 epoll_ctl 不同参数
+          
+            - [X] 该 socket 新 event， 则 socketfd 添加进红黑树（监控该socket）
+            - [X] 修改，例如该 socket 从读变成写或者增加写事件，那直接修改就好了，删除后在加入是画蛇添足
+            - [X] 从红黑树删除这个 socket = 不再监控该 socket
+
+    - [ ] 事件的生命周期
+
+        - [ ] 如果该 event 主动 free（），则是否调用 event_del
+
+            - [ ] 如果该 event 本来就没有加入调度队列？
+
+            - [ ] 
+
+--------------------------------------
